@@ -1,0 +1,78 @@
+pipeline {
+    agent any
+
+    environment {
+        SONAR_TOKEN      = credentials('sonar-token')
+        DOCKERHUB_USER   = credentials('dockerhub-username')
+        DOCKERHUB_PASS   = credentials('dockerhub-password')
+        DOCKER_IMAGE     = "coffee-app"
+        DOCKER_TAG       = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('1. Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/31RahulPatel/coffee-app.git'
+            }
+        }
+
+        stage('2. OWASP Dependency Check') {
+            steps {
+                dependencyCheck arguments: '--scan ./ --format XML --format HTML', scandir: './'
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
+            }
+        }
+
+        stage('3. SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        sonar-scanner \
+                        -Dsonar.host.url=http://localhost:9000 \
+                        -Dsonar.login=${SONAR_TOKEN} \
+                        -Dsonar.sources=. \
+                        -Dsonar.projectKey=coffee-app
+                    '''
+                }
+            }
+        }
+
+        stage('4. Docker Build') {
+            steps {
+                sh '''
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                '''
+            }
+        }
+
+        stage('5. Trivy Scan') {
+            steps {
+                sh '''
+                    trivy image --format json --output trivy-report.json ${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+                archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
+            }
+        }
+
+        stage('6. Docker Push') {
+            steps {
+                sh '''
+                    docker login -u ${DOCKERHUB_USER} -p ${DOCKERHUB_PASS}
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                    docker push ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+            }
+        }
+
+    }
+
+    post {
+        success {
+            echo "✅ BUILD SUCCESS - Image pushed: ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${DOCKER_TAG}"
+        }
+        failure {
+            echo "❌ BUILD FAILED - Check the logs above"
+        }
+    }
+}
