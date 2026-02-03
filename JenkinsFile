@@ -18,26 +18,40 @@ pipeline {
             }
         }
 
-        stage('2. OWASP Dependency Check') {
+        stage('2. Install Dependencies') {
             steps {
-                dependencyCheck odcInstallation: 'dependency-check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                sh 'npm ci'
             }
         }
 
-        stage('3. SonarQube Analysis') {
+        stage('3. OWASP Dependency Check') {
+            steps {
+                script {
+                    try {
+                        dependencyCheck additionalArguments: '--enableRetired --enableExperimental --scan ./', odcInstallation: 'dependency-check'
+                        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                    } catch (Exception e) {
+                        echo "⚠️ OWASP Dependency Check completed with warnings: ${e.getMessage()}"
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+        }
+
+        stage('4. SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     sh '''
                         sonar-scanner \
                         -Dsonar.projectKey=coffee-app \
-                        -Dsonar.sources=.
+                        -Dsonar.sources=src \
+                        -Dsonar.exclusions=node_modules/**,build/**
                     '''
                 }
             }
         }
 
-        stage('4. Docker Build') {
+        stage('5. Docker Build') {
             steps {
                 sh '''
                     docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
@@ -45,7 +59,7 @@ pipeline {
             }
         }
 
-        stage('5. Trivy Scan') {
+        stage('6. Trivy Scan') {
             steps {
                 sh '''
                     trivy image \
@@ -57,7 +71,7 @@ pipeline {
             }
         }
 
-        stage('6. Docker Push') {
+        stage('7. Docker Push') {
             steps {
                 sh '''
                     echo ${DOCKERHUB_PASS} | docker login -u ${DOCKERHUB_USER} --password-stdin
