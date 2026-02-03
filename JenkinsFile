@@ -20,7 +20,12 @@ pipeline {
 
         stage('2. Install Dependencies') {
             steps {
-                sh 'npm install'
+                timeout(time: 10, unit: 'MINUTES') {
+                    sh '''
+                        npm config set registry https://registry.npmjs.org/
+                        npm install --no-audit --no-fund --prefer-offline
+                    '''
+                }
             }
         }
 
