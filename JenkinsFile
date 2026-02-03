@@ -6,6 +6,7 @@ pipeline {
         DOCKERHUB_USER   = credentials('dockerhub-username')
         DOCKERHUB_PASS   = credentials('dockerhub-password')
         DOCKER_IMAGE     = "coffee-app"
+        
         DOCKER_TAG       = "${BUILD_NUMBER}"
     }
 
